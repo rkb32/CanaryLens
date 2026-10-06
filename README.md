@@ -79,4 +79,3 @@ The Go test covers 25 synthetic bad-release decisions. `scripts/smoke_demo.py` e
 ## Development
 
 Go source is in `controller/`, scorer source in `scorer/`, and the Vite app in `dashboard/`. The Compose stack persists audit events in PostgreSQL; when running the demo controller directly without `DATABASE_URL`, it uses an in-memory event buffer for development only. The local Compose database credentials are demo-only. The cluster manifests read database and bearer credentials from Secrets and terminate external TLS at ingress. The controller has no workload image-promotion or Deployment patching logic; it adjusts traffic for already-created stable/canary Services. Configure backups, secret rotation, network policy, internal gRPC TLS, and identity integration before production use.
-

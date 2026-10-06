@@ -1,0 +1,8 @@
+dashboard/node_modules/
+dashboard/dist/
+dashboard/*.tsbuildinfo
+**/__pycache__/
+work/
+.env
+.env.*
+!.env.example

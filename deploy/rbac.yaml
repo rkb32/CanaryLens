@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: canarylens-controller
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: canarylens-controller
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get"]
+  - apiGroups: ["canarylens.io"]
+    resources: ["canaryrollouts"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["canarylens.io"]
+    resources: ["canaryrollouts/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: canarylens-controller
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: canarylens-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: canarylens-controller

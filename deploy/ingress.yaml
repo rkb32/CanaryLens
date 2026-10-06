@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: canarylens
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [canarylens.example.com]
+      secretName: canarylens-tls
+  rules:
+    - host: canarylens.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: {name: canarylens-controller, port: {number: 8080}}
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service: {name: canarylens-controller, port: {number: 8080}}
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: canarylens-dashboard, port: {number: 80}}

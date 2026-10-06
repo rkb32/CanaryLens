@@ -1,0 +1,11 @@
+apiVersion: canarylens.io/v1alpha1
+kind: CanaryRollout
+metadata:
+  name: checkout-api
+  namespace: default
+spec:
+  serviceName: checkout-api
+  stableService: checkout-stable
+  canaryService: checkout-canary
+  ingressName: checkout-api
+  steps: [5, 25, 50, 100]

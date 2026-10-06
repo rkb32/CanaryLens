@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: canarylens-dashboard
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: canarylens-dashboard}
+  template:
+    metadata:
+      labels: {app: canarylens-dashboard}
+    spec:
+      containers:
+        - name: dashboard
+          image: ghcr.io/YOUR_ACCOUNT/canarylens-dashboard:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 80}]
+          readinessProbe: {httpGet: {path: /, port: http}, initialDelaySeconds: 2, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /, port: http}, initialDelaySeconds: 10, periodSeconds: 15}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canarylens-dashboard
+  namespace: default
+spec:
+  selector: {app: canarylens-dashboard}
+  ports: [{name: http, port: 80, targetPort: http}]
