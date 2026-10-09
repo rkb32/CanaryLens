@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
@@ -159,7 +160,10 @@ func tokenAuth(next http.Handler, token string) http.Handler {
 			return
 		}
 		provided := strings.TrimPrefix(header, "Bearer ")
-		if len(provided) != len(token) || subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+		// Compare fixed-size digests so the comparison does not leak the token's length.
+		providedHash := sha256.Sum256([]byte(provided))
+		tokenHash := sha256.Sum256([]byte(token))
+		if subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) != 1 {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
