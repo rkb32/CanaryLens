@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -70,12 +71,50 @@ func env(k, d string) string {
 	}
 	return d
 }
+
+// parseMode normalizes MODE and accepts only the two supported modes.
+func parseMode(raw string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	if mode != "demo" && mode != "kubernetes" {
+		return "", fmt.Errorf("MODE must be demo or kubernetes, got %q", raw)
+	}
+	return mode, nil
+}
+
+// parseErrorThreshold accepts a finite error-rate threshold in (0, 1].
+func parseErrorThreshold(raw string) (float64, error) {
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 || v > 1 {
+		return 0, fmt.Errorf("value %v is outside (0, 1]", v)
+	}
+	return v, nil
+}
+
+// parseRolloutSteps keeps the valid steps in raw and returns them sorted
+// ascending, so nextCanaryWeight always picks the smallest step above the current weight.
+func parseRolloutSteps(raw string) []int {
+	var steps []int
+	for _, p := range strings.Split(raw, ",") {
+		n, e := strconv.Atoi(strings.TrimSpace(p))
+		if e == nil && n > 0 && n <= 100 {
+			steps = append(steps, n)
+		}
+	}
+	sort.Ints(steps)
+	return steps
+}
+
 func main() {
 	encoding.RegisterCodec(jsonCodec{})
 	ctx := context.Background()
-	mode := env("MODE", "demo")
+	mode, err := parseMode(env("MODE", "demo"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	var db *sql.DB
-	var err error
 	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
 		db, err = sql.Open("pgx", databaseURL)
 		if err != nil {
@@ -105,13 +144,7 @@ func main() {
 	}
 	steps := []int{5, 25, 50, 100}
 	if raw := os.Getenv("ROLLOUT_STEPS"); raw != "" {
-		steps = nil
-		for _, p := range strings.Split(raw, ",") {
-			n, e := strconv.Atoi(strings.TrimSpace(p))
-			if e == nil && n > 0 && n <= 100 {
-				steps = append(steps, n)
-			}
-		}
+		steps = parseRolloutSteps(raw)
 	}
 	if len(steps) == 0 {
 		log.Fatal("ROLLOUT_STEPS must contain integers from 1 to 100")
@@ -120,9 +153,9 @@ func main() {
 	if err != nil || interval <= 0 {
 		log.Fatal("CHECK_INTERVAL must be a positive duration")
 	}
-	threshold, err := strconv.ParseFloat(env("ERROR_THRESHOLD", "0.01"), 64)
-	if err != nil || threshold < 0 {
-		log.Fatal("ERROR_THRESHOLD must be non-negative")
+	threshold, err := parseErrorThreshold(env("ERROR_THRESHOLD", "0.01"))
+	if err != nil {
+		log.Fatalf("ERROR_THRESHOLD must be a number greater than 0 and at most 1: %v", err)
 	}
 	apiToken := os.Getenv("API_TOKEN")
 	if mode == "kubernetes" && len(apiToken) < 32 {
@@ -145,7 +178,15 @@ func main() {
 	mux.HandleFunc("POST /api/demo/start", a.startDemo)
 	port := env("PORT", "8080")
 	log.Printf("CanaryLens API listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, cors(tokenAuth(mux, apiToken))))
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           cors(tokenAuth(mux, apiToken)),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 func tokenAuth(next http.Handler, token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +226,7 @@ func cors(next http.Handler) http.Handler {
 		if allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		}
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
 		if r.Method == "OPTIONS" {
 			if !allowed && origin != "" {
@@ -229,7 +270,8 @@ func (a *App) listEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := a.db.QueryContext(r.Context(), `SELECT id,rollout_id,at,kind,message,weight,error_rate FROM events ORDER BY id DESC LIMIT 100`)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		log.Printf("query events: %v", err)
+		http.Error(w, "event history unavailable", 500)
 		return
 	}
 	defer rows.Close()
@@ -237,10 +279,16 @@ func (a *App) listEvents(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var e Event
 		if err = rows.Scan(&e.ID, &e.RolloutID, &e.At, &e.Kind, &e.Message, &e.Weight, &e.ErrorRate); err != nil {
-			http.Error(w, err.Error(), 500)
+			log.Printf("scan event: %v", err)
+			http.Error(w, "event history unavailable", 500)
 			return
 		}
 		out = append(out, e)
+	}
+	if err = rows.Err(); err != nil {
+		log.Printf("read events: %v", err)
+		http.Error(w, "event history unavailable", 500)
+		return
 	}
 	writeJSON(w, out)
 }
@@ -249,6 +297,7 @@ func (a *App) startDemo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "demo mode is disabled", 404)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req struct {
 		Scenario string `json:"scenario"`
 	}
@@ -266,10 +315,11 @@ func (a *App) startDemo(w http.ResponseWriter, r *http.Request) {
 	ro := &Rollout{ID: id, Service: "checkout-api", Scenario: req.Scenario, Phase: "Progressing", Weight: initialWeight, StartedAt: now, UpdatedAt: now, Reason: "Initial canary traffic enabled; waiting for first metrics check"}
 	a.mu.Lock()
 	a.rollouts[id] = ro
+	snapshot := *ro
 	a.mu.Unlock()
-	a.event(r.Context(), ro, "started", "Canary rollout started", 0, 0)
-	a.event(r.Context(), ro, "progressed", fmt.Sprintf("Initial canary traffic set to %d%%", initialWeight), initialWeight, 0)
-	writeJSON(w, ro)
+	a.event(r.Context(), &snapshot, "started", "Canary rollout started", 0, 0)
+	a.event(r.Context(), &snapshot, "progressed", fmt.Sprintf("Initial canary traffic set to %d%%", initialWeight), initialWeight, 0)
+	writeJSON(w, snapshot)
 }
 func (a *App) event(ctx context.Context, ro *Rollout, kind, msg string, weight int, rate float64) {
 	at := time.Now().UTC()
