@@ -38,6 +38,29 @@ class ScorerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "INVALID_ARGUMENT"):
             score(b"{}", FakeContext())
 
+    def test_valid_payload_still_returns_score(self):
+        result = json.loads(score(json.dumps({
+            "stable": {"error_rate": 0.002, "latency_ms": 115},
+            "canary": {"error_rate": 0.002, "latency_ms": 130},
+        }).encode(), FakeContext()))
+        self.assertIn("score", result)
+        self.assertGreaterEqual(result["score"], 0.0)
+        self.assertLessEqual(result["score"], 1.0)
+
+    def test_nan_error_rate_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "INVALID_ARGUMENT"):
+            score(json.dumps({
+                "stable": {"error_rate": 0.002, "latency_ms": 115},
+                "canary": {"error_rate": float("nan"), "latency_ms": 130},
+            }).encode(), FakeContext())
+
+    def test_infinite_latency_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "INVALID_ARGUMENT"):
+            score(json.dumps({
+                "stable": {"error_rate": 0.002, "latency_ms": 115},
+                "canary": {"error_rate": 0.002, "latency_ms": float("inf")},
+            }).encode(), FakeContext())
+
     def test_grpc_json_transport_round_trip(self):
         server = create_server()
         port = server.add_insecure_port("127.0.0.1:0")

@@ -1,5 +1,6 @@
 """Small JSON-over-gRPC scorer; the transport remains gRPC while the payload stays inspectable."""
 import json
+import math
 from concurrent import futures
 
 import grpc
@@ -14,6 +15,8 @@ def score(payload: bytes, context: grpc.ServicerContext) -> bytes:
         canary_err = float(canary.get("error_rate", 0))
         stable_latency = float(stable.get("latency_ms", 0))
         canary_latency = float(canary.get("latency_ms", 0))
+        if not all(math.isfinite(v) for v in (stable_err, canary_err, stable_latency, canary_latency)):
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid scoring request: error_rate and latency_ms must be finite numbers")
         penalty = max(0.0, canary_err - stable_err) * 700 + max(0.0, canary_latency - stable_latency) / 1000
         value = max(0.0, min(1.0, 1.0 - penalty))
         if canary_err > stable_err * 1.5 + 0.002:
@@ -23,7 +26,7 @@ def score(payload: bytes, context: grpc.ServicerContext) -> bytes:
         else:
             reason = "Canary error rate and latency are close to the stable release."
         return json.dumps({"score": round(value, 3), "reason": reason}).encode()
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+    except (KeyError, TypeError, ValueError, AttributeError, json.JSONDecodeError) as exc:
         context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"invalid scoring request: {exc}")
 
 

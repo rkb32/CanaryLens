@@ -30,13 +30,14 @@ spec:
                 ingressName: {type: string}
                 steps:
                   type: array
+                  minItems: 1
                   items: {type: integer, minimum: 1, maximum: 100}
                   default: [5, 25, 50, 100]
             status:
               type: object
               properties:
                 phase: {type: string}
-                trafficWeight: {type: integer}
+                trafficWeight: {type: integer, minimum: 0, maximum: 100}
                 errorRate: {type: number}
                 score: {type: number}
                 stableLatencyMs: {type: number}

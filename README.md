@@ -53,20 +53,22 @@ Create stable and canary Services with live endpoints before starting a rollout.
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `MODE` | `demo` | `demo` runs the local simulator; `kubernetes` runs the in-cluster reconciler. Any other value fails at startup. |
+| `DEMO_MODE` | `false` | Enables the demo loop and `POST /api/demo/start`. Compose sets it to `true`. |
 | `PORT` | `8080` | Controller API port |
 | `DATABASE_URL` | unset for direct demo runs; Compose supplies local PostgreSQL | PostgreSQL connection; required in Kubernetes mode |
 | `SCORER_ADDR` | `localhost:50051` | Python gRPC scorer |
-| `PROMETHEUS_URL` | `http://localhost:9090` | Prometheus HTTP API |
+| `PROMETHEUS_URL` | `http://prometheus:9090` | Prometheus HTTP API |
 | `NAMESPACE` | `default` | Namespace watched in Kubernetes mode |
-| `API_TOKEN` | unset in local demo; required in Kubernetes mode | Bearer token protecting controller HTTP endpoints |
+| `API_TOKEN` | unset in local demo; required in Kubernetes mode | Bearer token protecting controller HTTP endpoints; at least 32 characters in Kubernetes mode. `GET /healthz` is exempt from the token check. |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated browser origins allowed to call the API |
-| `CHECK_INTERVAL` | `15s` | Time between metric checks |
-| `ERROR_THRESHOLD` | `0.01` | Maximum canary 5xx ratio |
-| `ROLLOUT_STEPS` | `5,25,50,100` | Canary traffic weights |
+| `CHECK_INTERVAL` | `15s` | Time between metric checks. In Kubernetes mode, the minimum is 5s. |
+| `ERROR_THRESHOLD` | `0.01` | Maximum canary 5xx ratio. Must be greater than 0 and at most 1; anything else fails at startup. |
+| `ROLLOUT_STEPS` | `5,25,50,100` | Canary traffic weights from 1 to 100. Steps are sorted ascending at startup; a CanaryRollout's `spec.steps` overrides them and is sorted the same way. |
 
 ## Rollout behavior
 
-In demo mode, the rollout progresses through 5%, 25%, 50%, and 100% traffic steps. Each check evaluates the rolling 1-minute canary 5xx ratio. Above 1%, the controller immediately sets canary traffic to zero and records a rollback event. In Kubernetes mode, the same decision logic is driven by Prometheus's `http_requests_total` series labeled with `service` and `status`.
+In demo mode, the rollout progresses through 5%, 25%, 50%, and 100% traffic steps. Demo mode simulates the error rate (0.2% for a healthy release, 3.5% for a bad one) and does not query Prometheus; the rolling 1-minute window applies to the Kubernetes path only. Above 1%, the controller immediately sets canary traffic to zero and records a rollback event. In Kubernetes mode, the same decision logic is driven by Prometheus's `http_requests_total` series labeled with `service` and `status`.
 
 The Python scorer compares stable and canary error rates and latency, then returns a score plus a concise explanation. The score is advisory; the hard error-rate threshold controls rollback. The dashboard can read the Kubernetes controller API through a browser-visible endpoint; use a port-forward or ingress for local cluster access.
 
@@ -75,6 +77,8 @@ The Python scorer compares stable and canary error rates and latency, then retur
 Run controller unit tests from `controller/` with `go test ./...`. Run scorer and manifest checks from the project root with `python -m pip install -r scorer/requirements.txt -r requirements-dev.txt`, then `python -m unittest discover -s scorer -v` and `python scripts/validate_yaml.py`. Build the dashboard with `cd dashboard && npm ci && npm run build`. GitHub Actions runs those checks and builds all three images before publishing images from pushes.
 
 The Go test covers 25 synthetic bad-release decisions. `scripts/smoke_demo.py` exercises 25 full HTTP demo rollouts and measures the recorded metric-sample-to-rollback delay; CI runs it against the Compose stack, including PostgreSQL and the real gRPC scorer. A local in-memory run measured 1.7 ms median and 37.2 ms maximum. Those numbers describe the synthetic demo decision path, not a Kubernetes cluster, real traffic, or end-user rollback time. No 9-second cluster median is claimed until measured against a running cluster with the target ingress and metrics setup.
+
+One local Docker Compose run on 2026-10-10 started the controller, scorer, postgres, and dashboard services. `scripts/smoke_demo.py` exited 0 and printed `PASS: 25/25 bad demo releases rolled back`, with a metric-sample-to-rollback delay of 27.4 ms median and 275.3 ms max. This is a single Compose run, not a Kubernetes cluster measurement.
 
 ## Development
 

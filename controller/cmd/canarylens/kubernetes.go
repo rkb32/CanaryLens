@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
 
@@ -22,21 +23,45 @@ import (
 
 var rolloutGVR = schema.GroupVersionResource{Group: "canarylens.io", Version: "v1alpha1", Resource: "canaryrollouts"}
 
+// rolloutSteps returns a CanaryRollout's spec.steps sorted ascending, or the
+// controller defaults when the resource sets none. The unstructured decoder
+// yields int64 for whole numbers, so both int64 and float64 values are read.
+func rolloutSteps(spec map[string]any, defaults []int) []int {
+	raw, ok := spec["steps"].([]any)
+	if !ok || len(raw) == 0 {
+		return defaults
+	}
+	var steps []int
+	for _, value := range raw {
+		var step int
+		switch v := value.(type) {
+		case int64:
+			step = int(v)
+		case float64:
+			step = int(v)
+		default:
+			continue
+		}
+		if step > 0 && step <= 100 {
+			steps = append(steps, step)
+		}
+	}
+	sort.Ints(steps)
+	return steps
+}
+
 func (a *App) watchKubernetes(ctx context.Context) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		log.Printf("kubernetes mode needs in-cluster credentials: %v", err)
-		return
+		log.Fatalf("kubernetes mode needs in-cluster credentials: %v", err)
 	}
 	dyn, err := dynamic.NewForConfig(config)
 	if err != nil {
-		log.Printf("create dynamic client: %v", err)
-		return
+		log.Fatalf("create dynamic client: %v", err)
 	}
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		log.Printf("create kubernetes client: %v", err)
-		return
+		log.Fatalf("create kubernetes client: %v", err)
 	}
 	period := a.interval
 	if period < 5*time.Second {
@@ -89,15 +114,7 @@ func (a *App) reconcileOne(ctx context.Context, dyn dynamic.Interface, client ku
 		return nil
 	}
 	weight, _, _ := unstructured.NestedInt64(obj.Object, "status", "trafficWeight")
-	steps := a.steps
-	if raw, ok := spec["steps"].([]any); ok && len(raw) > 0 {
-		steps = nil
-		for _, value := range raw {
-			if step, ok := value.(float64); ok && int(step) > 0 && int(step) <= 100 {
-				steps = append(steps, int(step))
-			}
-		}
-	}
+	steps := rolloutSteps(spec, a.steps)
 	if len(steps) == 0 {
 		return fmt.Errorf("spec.steps must contain values from 1 to 100")
 	}
