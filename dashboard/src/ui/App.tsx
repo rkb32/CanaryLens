@@ -11,16 +11,29 @@ export default function App() {
   const [demoMode, setDemoMode] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
   const [tokenDraft, setTokenDraft] = useState('')
-  const refresh = async () => {
+  const refresh = async (): Promise<boolean> => {
     try {
       const token = sessionStorage.getItem('canarylens-token') || ''
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-      const [r, e, c] = await Promise.all([fetch(`${API}/api/rollouts`, { headers }), fetch(`${API}/api/events`, { headers }), fetch(`${API}/api/config`, { headers })])
-      if (r.status === 401 || e.status === 401 || c.status === 401) { setAuthRequired(true); return }
-      if (r.ok && e.ok && c.ok) { setAuthRequired(false); setRollouts(await r.json()); setEvents(await e.json()); setDemoMode(Boolean((await c.json()).demoMode)) }
-    } catch { /* Controller can start after the dashboard. */ }
+      const [r, e, c] = await Promise.all([fetch(`${API}/api/rollouts`, { headers, signal: AbortSignal.timeout(5000) }), fetch(`${API}/api/events`, { headers, signal: AbortSignal.timeout(5000) }), fetch(`${API}/api/config`, { headers, signal: AbortSignal.timeout(5000) })])
+      if (r.status === 401 || e.status === 401 || c.status === 401) { setAuthRequired(true); return false }
+      if (r.ok && e.ok && c.ok) { setAuthRequired(false); setRollouts(await r.json()); setEvents(await e.json()); setDemoMode(Boolean((await c.json()).demoMode)); return true }
+      return false
+    } catch { /* Controller can start after the dashboard. */ return false }
   }
-  useEffect(() => { void refresh(); const id = window.setInterval(refresh, 2500); return () => clearInterval(id) }, [])
+  useEffect(() => {
+    let timer = 0
+    let delay = 2500
+    let stopped = false
+    const poll = async () => {
+      const ok = await refresh()
+      if (stopped) return
+      delay = ok ? 2500 : Math.min(delay * 2, 30000)
+      timer = window.setTimeout(poll, delay)
+    }
+    void poll()
+    return () => { stopped = true; window.clearTimeout(timer) }
+  }, [])
   const active = rollouts.find(x => ['Progressing', 'WaitingForMetrics', 'WaitingForEndpoints'].includes(x.phase))
   const latest = rollouts[0]
   const success = rollouts.length ? Math.round(100 * rollouts.filter(x => x.phase === 'Succeeded').length / rollouts.length) : 0
