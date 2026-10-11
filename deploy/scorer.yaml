@@ -11,12 +11,22 @@ spec:
     metadata:
       labels: {app: canarylens-scorer}
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: scorer
           image: ghcr.io/YOUR_ACCOUNT/canarylens-scorer:latest
           imagePullPolicy: IfNotPresent
           ports: [{name: grpc, containerPort: 50051}]
           readinessProbe: {tcpSocket: {port: grpc}, initialDelaySeconds: 2, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: grpc}, initialDelaySeconds: 10, periodSeconds: 20}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
 ---
 apiVersion: v1
 kind: Service
