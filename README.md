@@ -76,6 +76,10 @@ Run controller unit tests from `controller/` with `go test ./...`. Run scorer an
 
 The Go test covers 25 synthetic bad-release decisions. `scripts/smoke_demo.py` exercises 25 full HTTP demo rollouts and measures the recorded metric-sample-to-rollback delay; CI runs it against the Compose stack, including PostgreSQL and the real gRPC scorer. A local in-memory run measured 1.7 ms median and 37.2 ms maximum. Those numbers describe the synthetic demo decision path, not a Kubernetes cluster, real traffic, or end-user rollback time. No 9-second cluster median is claimed until measured against a running cluster with the target ingress and metrics setup.
 
+## Status
+
+CI runs the local demo: the Compose stack executes the 25 synthetic bad-release rollouts (`publish.yml`). Measured: 1.7 ms median decision time (37.2 ms max) in an in-memory run. Not yet run on a real Kubernetes cluster or real traffic.
+
 ## Development
 
 Go source is in `controller/`, scorer source in `scorer/`, and the Vite app in `dashboard/`. The Compose stack persists audit events in PostgreSQL; when running the demo controller directly without `DATABASE_URL`, it uses an in-memory event buffer for development only. The local Compose database credentials are demo-only. The cluster manifests read database and bearer credentials from Secrets and terminate external TLS at ingress. The controller has no workload image-promotion or Deployment patching logic; it adjusts traffic for already-created stable/canary Services. Configure backups, secret rotation, network policy, internal gRPC TLS, and identity integration before production use.
