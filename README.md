@@ -53,7 +53,7 @@ Create stable and canary Services with live endpoints before starting a rollout.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MODE` | `demo` | `demo` runs the local simulator; `kubernetes` runs the in-cluster reconciler. Any other value fails at startup. |
+| `MODE` | `demo` | `demo` is the default mode; `kubernetes` runs the in-cluster reconciler. The demo simulator runs only when `DEMO_MODE=true`. Any other value fails at startup. |
 | `DEMO_MODE` | `false` | Enables the demo loop and `POST /api/demo/start`. Compose sets it to `true`. |
 | `PORT` | `8080` | Controller API port |
 | `DATABASE_URL` | unset for direct demo runs; Compose supplies local PostgreSQL | PostgreSQL connection; required in Kubernetes mode |
