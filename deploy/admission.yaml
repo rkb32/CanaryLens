@@ -1,0 +1,32 @@
+# A CanaryRollout may only change the Ingress that matches its own service
+# name (spec.serviceName, or metadata.name when serviceName is unset). This
+# catches mismatched or copy-pasted rollouts at admission time.
+#
+# This does NOT stop a user who can create CanaryRollouts from naming another
+# app's Ingress, because they can set both fields to the same value. Limit who
+# can create CanaryRollouts with RBAC.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: canaryrollout-ingress-matches-service
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["canarylens.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["canaryrollouts"]
+  validations:
+    - expression: >-
+        object.spec.ingressName ==
+        (has(object.spec.serviceName) ? object.spec.serviceName : object.metadata.name)
+      message: "spec.ingressName must equal spec.serviceName, or metadata.name when serviceName is unset"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: canaryrollout-ingress-matches-service
+spec:
+  policyName: canaryrollout-ingress-matches-service
+  validationActions: [Deny]
