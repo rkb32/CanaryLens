@@ -14,7 +14,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: scorer
-          image: ghcr.io/YOUR_ACCOUNT/canarylens-scorer:sha-fa921a7
+          image: ghcr.io/rkb32/canarylens-scorer:sha-fa921a7
           imagePullPolicy: IfNotPresent
           ports: [{name: grpc, containerPort: 50051}]
           readinessProbe: {tcpSocket: {port: grpc}, initialDelaySeconds: 2, periodSeconds: 5}
