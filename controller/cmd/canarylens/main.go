@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -63,6 +64,9 @@ type App struct {
 	steps     []int
 	threshold float64
 	interval  time.Duration
+	// leader is true only on the replica that holds the controller Lease.
+	// /readyz reports it, so standby replicas receive no Service traffic.
+	leader atomic.Bool
 }
 
 func env(k, d string) string {
@@ -170,6 +174,13 @@ func main() {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if mode == "kubernetes" && !a.leader.Load() {
+			http.Error(w, "standby replica", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 	mux.HandleFunc("GET /api/rollouts", a.listRollouts)
 	mux.HandleFunc("GET /api/events", a.listEvents)
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +201,8 @@ func main() {
 }
 func tokenAuth(next http.Handler, token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if token == "" || r.URL.Path == "/healthz" {
+		// Kubelet probes cannot send the bearer token, so both probe paths are exempt.
+		if token == "" || r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 			next.ServeHTTP(w, r)
 			return
 		}

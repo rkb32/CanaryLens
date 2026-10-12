@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 )
 
 var rolloutGVR = schema.GroupVersionResource{Group: "canarylens.io", Version: "v1alpha1", Resource: "canaryrollouts"}
@@ -67,9 +70,50 @@ func (a *App) watchKubernetes(ctx context.Context) {
 	if period < 5*time.Second {
 		period = 5 * time.Second
 	}
+	ns := env("NAMESPACE", "default")
+	identity := env("POD_NAME", "")
+	if identity == "" {
+		identity, _ = os.Hostname()
+	}
+	// Only the Lease holder reconciles. Two replicas running the loop at once
+	// would both shift Ingress canary weights for the same rollout.
+	lock := &resourcelock.LeaseLock{
+		LeaseMeta:  metav1.ObjectMeta{Name: "canarylens-controller", Namespace: ns},
+		Client:     client.CoordinationV1(),
+		LockConfig: resourcelock.ResourceLockConfig{Identity: identity},
+	}
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock:            lock,
+		ReleaseOnCancel: true,
+		LeaseDuration:   15 * time.Second,
+		RenewDeadline:   10 * time.Second,
+		RetryPeriod:     2 * time.Second,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(ctx context.Context) {
+				a.leader.Store(true)
+				log.Printf("%s is leader; watching CanaryRollout resources in namespace %q", identity, ns)
+				a.reconcileLoop(ctx, dyn, client, period)
+			},
+			OnStoppedLeading: func() {
+				a.leader.Store(false)
+				if ctx.Err() != nil {
+					return // shutting down; the lease is released on cancel
+				}
+				// Exit instead of retrying so the pod restarts as a clean standby.
+				log.Fatalf("%s lost the controller lease; exiting", identity)
+			},
+			OnNewLeader: func(id string) {
+				if id != identity {
+					log.Printf("current leader is %s", id)
+				}
+			},
+		},
+	})
+}
+
+func (a *App) reconcileLoop(ctx context.Context, dyn dynamic.Interface, client kubernetes.Interface, period time.Duration) {
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
-	log.Printf("watching CanaryRollout resources in namespace %q", env("NAMESPACE", "default"))
 	for {
 		if err := a.reconcileRollouts(ctx, dyn, client); err != nil {
 			log.Printf("reconcile rollouts: %v", err)

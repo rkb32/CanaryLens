@@ -1,0 +1,10 @@
+# Keeps at least one controller replica running during node drains.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: canarylens-controller
+  namespace: default
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: canarylens-controller}
