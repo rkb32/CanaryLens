@@ -18,7 +18,7 @@ Requirements: Docker Compose.
 docker compose up --build
 ```
 
-Open <http://localhost:3000>. Choose **Start bad release** to observe a rollback after the first failing check, or **Start healthy release** to watch the rollout progress. The demo uses a deterministic metric simulator so the behavior is repeatable; it does not require a Kubernetes cluster or cloud credentials. The API is available at <http://localhost:8080/api/rollouts>.
+Open <http://localhost:3000>. The buttons appear only when the controller runs with `DEMO_MODE=true`, which Compose sets. Choose **Simulate bad release** to observe a rollback after the first failing check, or **Healthy release** to watch the rollout progress. The demo uses a deterministic metric simulator so the behavior is repeatable; it does not require a Kubernetes cluster or cloud credentials. The API is available at <http://localhost:8080/api/rollouts>.
 
 ## Run against Kubernetes
 
