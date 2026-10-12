@@ -14,7 +14,7 @@ spec:
       serviceAccountName: canarylens-controller
       containers:
         - name: controller
-          image: ghcr.io/YOUR_ACCOUNT/canarylens-controller:latest
+          image: ghcr.io/YOUR_ACCOUNT/canarylens-controller:sha-fa921a7
           imagePullPolicy: IfNotPresent
           ports: [{name: http, containerPort: 8080}]
           env:

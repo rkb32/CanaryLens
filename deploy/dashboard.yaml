@@ -14,7 +14,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: dashboard
-          image: ghcr.io/YOUR_ACCOUNT/canarylens-dashboard:latest
+          image: ghcr.io/YOUR_ACCOUNT/canarylens-dashboard:sha-fa921a7
           imagePullPolicy: IfNotPresent
           ports: [{name: http, containerPort: 80}]
           readinessProbe: {httpGet: {path: /, port: http}, initialDelaySeconds: 2, periodSeconds: 5}
