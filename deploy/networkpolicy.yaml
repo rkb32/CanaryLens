@@ -1,0 +1,54 @@
+# Restricts who can reach each CanaryLens pod. These policies only limit
+# ingress to the selected pods; egress is left open so DNS, the Kubernetes API,
+# and Prometheus keep working.
+#
+# Assumes the ingress controller runs in a namespace labeled
+# kubernetes.io/metadata.name=ingress-nginx (the default for ingress-nginx).
+# Change the namespaceSelector if yours differs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: canarylens-scorer-from-controller
+  namespace: default
+spec:
+  podSelector:
+    matchLabels: {app: canarylens-scorer}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: canarylens-controller}
+      ports:
+        - {protocol: TCP, port: 50051}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: canarylens-controller-from-ingress
+  namespace: default
+spec:
+  podSelector:
+    matchLabels: {app: canarylens-controller}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: canarylens-dashboard-from-ingress
+  namespace: default
+spec:
+  podSelector:
+    matchLabels: {app: canarylens-dashboard}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports:
+        - {protocol: TCP, port: 80}
