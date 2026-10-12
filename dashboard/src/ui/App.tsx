@@ -11,11 +11,15 @@ export default function App() {
   const [demoMode, setDemoMode] = useState(false)
   const [authRequired, setAuthRequired] = useState(false)
   const [tokenDraft, setTokenDraft] = useState('')
+  const requestTimeout = (ms: number): AbortSignal | undefined => {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms)
+    return undefined
+  }
   const refresh = async (): Promise<boolean> => {
     try {
       const token = sessionStorage.getItem('canarylens-token') || ''
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-      const [r, e, c] = await Promise.all([fetch(`${API}/api/rollouts`, { headers, signal: AbortSignal.timeout(5000) }), fetch(`${API}/api/events`, { headers, signal: AbortSignal.timeout(5000) }), fetch(`${API}/api/config`, { headers, signal: AbortSignal.timeout(5000) })])
+      const [r, e, c] = await Promise.all([fetch(`${API}/api/rollouts`, { headers, signal: requestTimeout(5000) }), fetch(`${API}/api/events`, { headers, signal: requestTimeout(5000) }), fetch(`${API}/api/config`, { headers, signal: requestTimeout(5000) })])
       if (r.status === 401 || e.status === 401 || c.status === 401) { setAuthRequired(true); return false }
       if (r.ok && e.ok && c.ok) { setAuthRequired(false); setRollouts(await r.json()); setEvents(await e.json()); setDemoMode(Boolean((await c.json()).demoMode)); return true }
       return false
